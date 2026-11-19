@@ -10,8 +10,9 @@
 
 PORT ?= 8000
 HOST ?= 0.0.0.0
+STRATEGY ?= chaining
 
-.PHONY: all test serve experiment clean
+.PHONY: all test serve experiment experiment-compare clean
 
 all: test
 
@@ -19,10 +20,13 @@ test:
 	@python3 -m unittest discover -s tests -v
 
 serve:
-	@python3 -m src.server --host $(HOST) --port $(PORT)
+	@python3 -m src.server --host $(HOST) --port $(PORT) --strategy $(STRATEGY)
 
 experiment:
 	@python3 -m experiments.probe_experiment
+
+experiment-compare:
+	@python3 -m experiments.compare_strategies
 
 clean:
 	rm -rf src/__pycache__ tests/__pycache__ experiments/__pycache__

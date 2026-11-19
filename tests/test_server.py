@@ -2,8 +2,10 @@ import http.client
 import json
 import threading
 import unittest
+from http.server import HTTPServer
 
 from src.hash_table import HashTable
+from src.linear_probing import LinearProbingHashTable
 from src.server import create_server
 from src.shortener import URLShortener
 
@@ -11,10 +13,15 @@ from src.shortener import URLShortener
 class URLServerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.shortener = URLShortener()
-        self.server = create_server("127.0.0.1", 0, self.shortener)
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
-        self.port = self.server.server_address[1]
+        self.server, self.thread, self.port = self.start_server(self.shortener)
+
+    def start_server(
+        self, shortener: URLShortener | None = None, strategy: str = "chaining"
+    ) -> tuple[HTTPServer, threading.Thread, int]:
+        server = create_server("127.0.0.1", 0, shortener, strategy=strategy)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        return server, thread, server.server_address[1]
 
     def tearDown(self) -> None:
         self.server.shutdown()
@@ -27,20 +34,26 @@ class URLServerTests(unittest.TestCase):
         path: str,
         body: bytes | str | None = None,
         headers: dict[str, str] | None = None,
+        port: int | None = None,
     ) -> tuple[int, dict[str, str], bytes]:
-        connection = http.client.HTTPConnection("127.0.0.1", self.port)
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", self.port if port is None else port
+        )
         connection.request(method, path, body=body, headers=headers or {})
         response = connection.getresponse()
         result = response.status, dict(response.getheaders()), response.read()
         connection.close()
         return result
 
-    def post_url(self, url: str) -> tuple[int, dict[str, str], dict[str, str]]:
+    def post_url(
+        self, url: str, port: int | None = None
+    ) -> tuple[int, dict[str, str], dict[str, str]]:
         status, headers, body = self.request(
             "POST",
             "/shorten",
             json.dumps({"url": url}),
             {"Content-Type": "application/json"},
+            port,
         )
         return status, headers, json.loads(body)
 
@@ -121,6 +134,27 @@ class URLServerTests(unittest.TestCase):
         status, _, _ = self.request("GET", "/r/a-")
         self.assertEqual(status, 400)
 
+    def test_linear_probing_mode_shortens_duplicates_and_redirects(self) -> None:
+        server, thread, port = self.start_server(strategy="linear-probing")
+        url = "https://example.com/linear"
+
+        try:
+            status, _, first = self.post_url(url, port)
+            self.assertEqual(status, 201)
+            status, _, duplicate = self.post_url(url, port)
+            self.assertEqual(status, 200)
+            self.assertEqual(duplicate["code"], first["code"])
+
+            status, headers, _ = self.request(
+                "GET", f"/r/{first['code']}", port=port
+            )
+            self.assertEqual(status, 302)
+            self.assertEqual(headers["Location"], url)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
     def test_table_shows_all_buckets_collisions_links_and_horner_steps(self) -> None:
         table: HashTable[str] = HashTable()
         first_by_bucket: dict[int, str] = {}
@@ -156,6 +190,45 @@ class URLServerTests(unittest.TestCase):
         self.assertIn("Horner hash steps", page)
         self.assertIn("Final bucket", page)
         self.assertIn(f"Bucket {collision_bucket}", page)
+
+    def test_linear_probing_table_shows_hash_start_and_stored_slot(self) -> None:
+        table: LinearProbingHashTable[str] = LinearProbingHashTable(
+            capacity=8, max_load=None
+        )
+        first_by_bucket: dict[int, str] = {}
+        collision_urls: tuple[str, str] | None = None
+        start_slot = -1
+        for index in range(100):
+            url = f"https://example.com/linear-{index}"
+            start = table.bucket_index(url)
+            if start in first_by_bucket:
+                collision_urls = first_by_bucket[start], url
+                start_slot = start
+                break
+            first_by_bucket[start] = url
+
+        self.assertIsNotNone(collision_urls)
+        assert collision_urls is not None
+        first_url, second_url = collision_urls
+        stored_slot = (start_slot + 1) % table.capacity
+        server, thread, port = self.start_server(strategy="linear-probing")
+
+        try:
+            self.assertEqual(self.post_url(first_url, port)[0], 201)
+            self.assertEqual(self.post_url(second_url, port)[0], 201)
+            status, _, body = self.request("GET", "/table", port=port)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+        page = body.decode("utf-8")
+        self.assertEqual(status, 200)
+        self.assertIn(f'id="slot-{start_slot}"', page)
+        self.assertIn(f'id="slot-{stored_slot}"', page)
+        self.assertIn(f"Horner hash start slot: {start_slot}", page)
+        self.assertIn(f"Actual stored slot: {stored_slot}", page)
+        self.assertIn("Empty slot", page)
 
 
 if __name__ == "__main__":

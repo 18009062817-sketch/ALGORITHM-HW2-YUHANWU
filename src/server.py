@@ -6,6 +6,8 @@ from html import escape
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import unquote, urlsplit
 
+from src.hash_table import HashTable
+from src.linear_probing import LinearProbingHashTable, _Deleted, _Entry
 from src.shortener import URLShortener
 
 
@@ -63,8 +65,11 @@ def create_server(
     host: str = "0.0.0.0",
     port: int = 8000,
     shortener: URLShortener | None = None,
+    strategy: str = "chaining",
 ) -> HTTPServer:
-    url_shortener = shortener if shortener is not None else URLShortener()
+    url_shortener = (
+        shortener if shortener is not None else URLShortener(strategy=strategy)
+    )
 
     class URLShortenerHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -146,6 +151,13 @@ def create_server(
 
         def _render_table(self) -> str:
             table = url_shortener._url_to_code
+            if isinstance(table, HashTable):
+                return self._render_chaining_table(table)
+            if isinstance(table, LinearProbingHashTable):
+                return self._render_linear_table(table)
+            raise RuntimeError("unsupported hash table strategy")
+
+        def _render_chaining_table(self, table: HashTable[str]) -> str:
             parts = [
                 "<!doctype html>",
                 '<html lang="en"><head><meta charset="utf-8">',
@@ -163,46 +175,88 @@ def create_server(
                     parts.append('<div class="chain">')
                     node = first_node
                     while node is not None:
-                        url = node.key
-                        code = node.value
-                        short_url = f"{self._public_base_url()}/r/{code}"
-                        parts.append("<article>")
                         parts.append(
-                            "<details><summary>"
-                            f"{escape(url)} &rarr; {escape(code)}"
-                            "</summary>"
-                        )
-                        parts.append(f"<p>URL: {escape(url)}</p>")
-                        parts.append(f"<p>Code: {escape(code)}</p>")
-                        parts.append(
-                            f'<p>Short link: <a href="{escape(short_url, quote=True)}">'
-                            f"{escape(short_url)}</a></p>"
-                        )
-                        parts.append(
-                            "<details><summary>Horner hash steps</summary><ol>"
-                        )
-                        value = 0
-                        for character in url:
-                            previous = value
-                            value = (
-                                31 * value + ord(character)
-                            ) % table.capacity
-                            parts.append(
-                                "<li>"
-                                f"h = (31 * {previous} + ord({escape(repr(character))})) "
-                                f"% {table.capacity} = {value}"
-                                "</li>"
+                            self._render_entry(
+                                table, node.key, node.value, bucket_index, False
                             )
-                        parts.append(
-                            f"</ol><p>Final bucket: {value}</p></details></details>"
                         )
-                        parts.append("</article>")
                         if node.next is not None:
                             parts.append('<span class="chain-arrow">&rarr;</span>')
                         node = node.next
                     parts.append("</div>")
                 parts.append("</section>")
             parts.append("</body></html>")
+            return "\n".join(parts)
+
+        def _render_linear_table(self, table: LinearProbingHashTable[str]) -> str:
+            parts = [
+                "<!doctype html>",
+                '<html lang="en"><head><meta charset="utf-8">',
+                '<meta name="viewport" content="width=device-width, initial-scale=1">',
+                "<title>Linear probing hash table</title></head><body>",
+                "<h1>URL-to-code linear probing table</h1>",
+            ]
+            for slot_index, entry in enumerate(table._slots):
+                parts.append(
+                    f'<section id="slot-{slot_index}"><h2>Slot {slot_index}</h2>'
+                )
+                if entry is None:
+                    parts.append("<p>Empty slot</p>")
+                elif isinstance(entry, _Deleted):
+                    parts.append("<p>Deleted slot</p>")
+                elif isinstance(entry, _Entry):
+                    parts.append(
+                        self._render_entry(
+                            table, entry.key, entry.value, slot_index, True
+                        )
+                    )
+                parts.append("</section>")
+            parts.append("</body></html>")
+            return "\n".join(parts)
+
+        def _render_entry(
+            self,
+            table: HashTable[str] | LinearProbingHashTable[str],
+            url: str,
+            code: str,
+            actual_index: int,
+            linear_probing: bool,
+        ) -> str:
+            start_index = table.bucket_index(url)
+            short_url = f"{self._public_base_url()}/r/{code}"
+            start_label = (
+                "Horner hash start slot"
+                if linear_probing
+                else "Horner hash start bucket"
+            )
+            actual_label = (
+                "Actual stored slot" if linear_probing else "Stored bucket"
+            )
+            parts = [
+                "<article><details><summary>",
+                f"{escape(url)} &rarr; {escape(code)}",
+                "</summary>",
+                f"<p>URL: {escape(url)}</p>",
+                f"<p>Code: {escape(code)}</p>",
+                f'<p>Short link: <a href="{escape(short_url, quote=True)}">',
+                f"{escape(short_url)}</a></p>",
+                f"<p>{start_label}: {start_index}</p>",
+                f"<p>{actual_label}: {actual_index}</p>",
+                "<details><summary>Horner hash steps</summary><ol>",
+            ]
+            value = 0
+            for character in url:
+                previous = value
+                value = (31 * value + ord(character)) % table.capacity
+                parts.append(
+                    "<li>"
+                    f"h = (31 * {previous} + ord({escape(repr(character))})) "
+                    f"% {table.capacity} = {value}"
+                    "</li>"
+                )
+            parts.append(
+                f"</ol><p>Final bucket: {value}</p></details></details></article>"
+            )
             return "\n".join(parts)
 
         def _send_html(self, content: str) -> None:
@@ -226,9 +280,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the URL shortener web server")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument(
+        "--strategy",
+        choices=("chaining", "linear-probing"),
+        default="chaining",
+    )
     args = parser.parse_args()
 
-    server = create_server(args.host, args.port)
+    server = create_server(args.host, args.port, strategy=args.strategy)
     print(f"Serving on http://{args.host}:{server.server_port}")
     try:
         server.serve_forever()

@@ -71,6 +71,23 @@ class URLShortenerTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.shortener.expand(code)
 
+    def test_chaining_and_linear_probing_modes_reuse_codes(self):
+        url = "https://example.com/shared"
+
+        for strategy in ("chaining", "linear-probing"):
+            with self.subTest(strategy=strategy):
+                shortener = URLShortener(strategy=strategy)
+                first_code = shortener.shorten(url)
+                duplicate_code = shortener.shorten(url)
+
+                self.assertEqual(first_code, "0")
+                self.assertEqual(duplicate_code, first_code)
+                self.assertEqual(shortener.expand(first_code), url)
+                self.assertEqual(shortener.shorten("https://example.org/"), "1")
+
+    def test_chaining_remains_the_default_strategy(self):
+        self.assertEqual(self.shortener.strategy, "chaining")
+
 
 if __name__ == "__main__":
     unittest.main()
