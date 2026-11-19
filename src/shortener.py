@@ -12,10 +12,14 @@ class URLShortener:
         self._next_id = 0
 
     def shorten(self, url: str) -> str:
+        code, _ = self.shorten_with_status(url)
+        return code
+
+    def shorten_with_status(self, url: str) -> tuple[str, bool]:
         self._validate_url(url)
 
         try:
-            return self._url_to_code.get(url)
+            return self._url_to_code.get(url), False
         except KeyError:
             pass
 
@@ -23,7 +27,7 @@ class URLShortener:
         self._url_to_code.put(url, code)
         self._code_to_url.put(code, url)
         self._next_id += 1
-        return code
+        return code, True
 
     def expand(self, code: str) -> str:
         decode(code)
