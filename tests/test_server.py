@@ -191,6 +191,30 @@ class URLServerTests(unittest.TestCase):
         self.assertIn("Final bucket", page)
         self.assertIn(f"Bucket {collision_bucket}", page)
 
+        collision_start = page.index(f'id="bucket-{collision_bucket}"')
+        collision_end = page.index("</section>", collision_start)
+        collision_section = page[collision_start:collision_end]
+        self.assertIn("Chain length: 2", collision_section)
+        node_positions = sorted(
+            (collision_section.index(first_url), collision_section.index(second_url))
+        )
+        arrow_position = collision_section.index(
+            '<span class="chain-arrow">&rarr;</span>'
+        )
+        null_position = collision_section.index(
+            '<span class="chain-arrow">&rarr; NULL</span>'
+        )
+        self.assertLess(node_positions[0], arrow_position)
+        self.assertLess(arrow_position, node_positions[1])
+        self.assertLess(node_positions[1], null_position)
+
+        empty_bucket = next(
+            bucket for bucket in range(8) if bucket != collision_bucket
+        )
+        empty_start = page.index(f'id="bucket-{empty_bucket}"')
+        empty_end = page.index("</section>", empty_start)
+        self.assertIn("Chain length: 0", page[empty_start:empty_end])
+
     def test_linear_probing_table_shows_hash_start_and_stored_slot(self) -> None:
         table: LinearProbingHashTable[str] = LinearProbingHashTable(
             capacity=8, max_load=None

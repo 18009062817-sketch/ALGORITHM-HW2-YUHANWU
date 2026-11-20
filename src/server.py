@@ -169,6 +169,13 @@ def create_server(
                 parts.append(
                     f'<section id="bucket-{bucket_index}"><h2>Bucket {bucket_index}</h2>'
                 )
+                chain_length = 0
+                node = first_node
+                while node is not None:
+                    chain_length += 1
+                    node = node.next
+                parts.append(f"<p>Chain length: {chain_length}</p>")
+
                 if first_node is None:
                     parts.append("<p>Empty bucket</p>")
                 else:
@@ -183,6 +190,9 @@ def create_server(
                         if node.next is not None:
                             parts.append('<span class="chain-arrow">&rarr;</span>')
                         node = node.next
+                    parts.append(
+                        '<span class="chain-arrow">&rarr; NULL</span>'
+                    )
                     parts.append("</div>")
                 parts.append("</section>")
             parts.append("</body></html>")
