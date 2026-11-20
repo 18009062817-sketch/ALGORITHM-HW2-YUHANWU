@@ -242,8 +242,10 @@ def create_server(
                 f"{escape(short_url)}</a></p>",
                 f"<p>{start_label}: {start_index}</p>",
                 f"<p>{actual_label}: {actual_index}</p>",
-                "<details><summary>Horner hash steps</summary><ol>",
             ]
+            if linear_probing:
+                parts.append(f"<p>Probes: {table.find(url)[1]}</p>")
+            parts.append("<details><summary>Horner hash steps</summary><ol>")
             value = 0
             for character in url:
                 previous = value

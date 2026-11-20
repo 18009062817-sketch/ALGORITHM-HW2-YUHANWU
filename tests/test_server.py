@@ -230,6 +230,39 @@ class URLServerTests(unittest.TestCase):
         self.assertIn(f"Actual stored slot: {stored_slot}", page)
         self.assertIn("Empty slot", page)
 
+    def test_linear_probing_table_shows_probe_count_after_wraparound(self) -> None:
+        table: LinearProbingHashTable[str] = LinearProbingHashTable(
+            capacity=8, max_load=None
+        )
+        urls = []
+        for index in range(1000):
+            url = f"https://example.com/wrap-{index}"
+            if table.bucket_index(url) == 7:
+                urls.append(url)
+                if len(urls) == 3:
+                    break
+
+        self.assertEqual(len(urls), 3)
+        shortener = URLShortener(strategy="linear-probing")
+        server, thread, port = self.start_server(shortener)
+
+        try:
+            for url in urls:
+                self.assertEqual(self.post_url(url, port)[0], 201)
+            status, _, body = self.request("GET", "/table", port=port)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+        stored_table = shortener._url_to_code
+        self.assertIsInstance(stored_table, LinearProbingHashTable)
+        self.assertEqual([stored_table.slot_index(url) for url in urls], [7, 0, 1])
+        self.assertEqual(status, 200)
+        self.assertIn("Horner hash start slot: 7", body.decode("utf-8"))
+        self.assertIn("Actual stored slot: 1", body.decode("utf-8"))
+        self.assertIn("Probes: 3", body.decode("utf-8"))
+
 
 if __name__ == "__main__":
     unittest.main()

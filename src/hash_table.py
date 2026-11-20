@@ -33,6 +33,10 @@ class HashTable(Generic[Value]):
     def capacity(self) -> int:
         return self._capacity
 
+    @property
+    def load_factor(self) -> float:
+        return self._size / self._capacity
+
     def bucket_index(self, key: str) -> int:
         if not isinstance(key, str):
             raise TypeError("key must be a string")
@@ -53,16 +57,34 @@ class HashTable(Generic[Value]):
 
         self._buckets[index] = _Node(key, value, self._buckets[index])
         self._size += 1
-        if self.max_load is not None and self._size / self._capacity > self.max_load:
+        if self.max_load is not None and self.load_factor > self.max_load:
             self._resize(self._capacity * 2)
 
     def get(self, key: str) -> Value:
+        node, _ = self._find_node(key)
+        if node is None:
+            raise KeyError(key)
+        return node.value
+
+    def find(self, key: str) -> tuple[Value | None, int]:
+        node, probes = self._find_node(key)
+        return (None if node is None else node.value), probes
+
+    def __contains__(self, key: object) -> bool:
+        if not isinstance(key, str):
+            return False
+        node, _ = self._find_node(key)
+        return node is not None
+
+    def _find_node(self, key: str) -> tuple[_Node[Value] | None, int]:
         node = self._buckets[self.bucket_index(key)]
+        probes = 0
         while node is not None:
+            probes += 1
             if node.key == key:
-                return node.value
+                return node, probes
             node = node.next
-        raise KeyError(key)
+        return None, probes
 
     def delete(self, key: str) -> Value:
         index = self.bucket_index(key)

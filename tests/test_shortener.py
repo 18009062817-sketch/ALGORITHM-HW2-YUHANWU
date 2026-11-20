@@ -3,9 +3,11 @@ import unittest
 from src.shortener import URLShortener
 
 
-class URLShortenerTests(unittest.TestCase):
+class URLShortenerTestCases:
+    strategy = "chaining"
+
     def setUp(self):
-        self.shortener = URLShortener()
+        self.shortener = URLShortener(strategy=self.strategy)
 
     def test_duplicate_url_reuses_code_without_consuming_an_id(self):
         url = "https://example.com/"
@@ -86,7 +88,15 @@ class URLShortenerTests(unittest.TestCase):
                 self.assertEqual(shortener.shorten("https://example.org/"), "1")
 
     def test_chaining_remains_the_default_strategy(self):
-        self.assertEqual(self.shortener.strategy, "chaining")
+        self.assertEqual(URLShortener().strategy, "chaining")
+
+
+class URLShortenerTests(URLShortenerTestCases, unittest.TestCase):
+    strategy = "chaining"
+
+
+class LinearProbingURLShortenerTests(URLShortenerTestCases, unittest.TestCase):
+    strategy = "linear-probing"
 
 
 if __name__ == "__main__":

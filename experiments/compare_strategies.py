@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.hash_table import HashTable
-from src.linear_probing import LinearProbingHashTable, _Entry
+from src.linear_probing import LinearProbingHashTable
 
 
 CAPACITY = 4093
@@ -40,31 +40,6 @@ def _random_urls(rng: random.Random, host: str, count: int) -> list[str]:
     ]
 
 
-def _count_chaining_probes(table: HashTable[str], key: str) -> int:
-    node = table._buckets[table.bucket_index(key)]
-    comparisons = 0
-    while node is not None:
-        comparisons += 1
-        if node.key == key:
-            break
-        node = node.next
-    return comparisons
-
-
-def _count_linear_probes(
-    table: LinearProbingHashTable[str], key: str
-) -> int:
-    start = table.bucket_index(key)
-    for offset in range(table.capacity):
-        index = (start + offset) % table.capacity
-        entry = table._slots[index]
-        if entry is None:
-            return offset + 1
-        if isinstance(entry, _Entry) and entry.key == key:
-            return offset + 1
-    return table.capacity
-
-
 def run_experiment() -> list[Comparison]:
     rng = random.Random(RANDOM_SEED)
     comparisons = []
@@ -88,16 +63,16 @@ def run_experiment() -> list[Comparison]:
             raise RuntimeError("hash table strategies produced different load factors")
 
         chaining_success = sum(
-            _count_chaining_probes(chaining, key) for key in keys
+            chaining.find(key)[1] for key in keys
         ) / key_count
         chaining_failure = sum(
-            _count_chaining_probes(chaining, key) for key in failed_keys
+            chaining.find(key)[1] for key in failed_keys
         ) / FAILED_QUERY_COUNT
         linear_success = sum(
-            _count_linear_probes(linear, key) for key in keys
+            linear.find(key)[1] for key in keys
         ) / key_count
         linear_failure = sum(
-            _count_linear_probes(linear, key) for key in failed_keys
+            linear.find(key)[1] for key in failed_keys
         ) / FAILED_QUERY_COUNT
 
         comparisons.append(

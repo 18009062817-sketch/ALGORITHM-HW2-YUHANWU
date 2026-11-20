@@ -37,6 +37,10 @@ class LinearProbingHashTable(Generic[Value]):
     def capacity(self) -> int:
         return self._capacity
 
+    @property
+    def load_factor(self) -> float:
+        return self._size / self._capacity
+
     def bucket_index(self, key: str) -> int:
         if not isinstance(key, str):
             raise TypeError("key must be a string")
@@ -71,7 +75,7 @@ class LinearProbingHashTable(Generic[Value]):
 
         self._slots[insertion_index] = _Entry(key, value)
         self._size += 1
-        if self.max_load is not None and self._size / self._capacity > self.max_load:
+        if self.max_load is not None and self.load_factor > self.max_load:
             self._resize(self._capacity * 2)
 
     def get(self, key: str) -> Value:
@@ -83,6 +87,21 @@ class LinearProbingHashTable(Generic[Value]):
         if not isinstance(entry, _Entry):
             raise KeyError(key)
         return entry.value
+
+    def find(self, key: str) -> tuple[Value | None, int]:
+        index, probes = self._find_slot_with_probes(key)
+        if index is None:
+            return None, probes
+        entry = self._slots[index]
+        if not isinstance(entry, _Entry):
+            return None, probes
+        return entry.value, probes
+
+    def __contains__(self, key: object) -> bool:
+        if not isinstance(key, str):
+            return False
+        index, _ = self._find_slot_with_probes(key)
+        return index is not None
 
     def delete(self, key: str) -> Value:
         index = self._find_slot(key)
@@ -100,15 +119,19 @@ class LinearProbingHashTable(Generic[Value]):
         return self._size
 
     def _find_slot(self, key: str) -> int | None:
+        index, _ = self._find_slot_with_probes(key)
+        return index
+
+    def _find_slot_with_probes(self, key: str) -> tuple[int | None, int]:
         start = self.bucket_index(key)
         for offset in range(self._capacity):
             index = (start + offset) % self._capacity
             entry = self._slots[index]
             if entry is None:
-                return None
+                return None, offset + 1
             if isinstance(entry, _Entry) and entry.key == key:
-                return index
-        return None
+                return index, offset + 1
+        return None, self._capacity
 
     def _find_insertion_slot(self, key: str) -> int | None:
         start = self.bucket_index(key)

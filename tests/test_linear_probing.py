@@ -42,6 +42,19 @@ class LinearProbingHashTableTests(unittest.TestCase):
         self.assertEqual(table.get("w"), "third")
         self.assertEqual(len(table), 2)
 
+    def test_full_table_updates_existing_key_and_bounds_missing_search(self):
+        table = LinearProbingHashTable(capacity=8, max_load=None)
+        for index in range(8):
+            table.put(f"key-{index}", index)
+
+        table.put("key-0", "updated")
+
+        self.assertEqual(table.get("key-0"), "updated")
+        self.assertEqual(len(table), 8)
+        with self.assertRaises(OverflowError):
+            table.put("new-key", "new value")
+        self.assertEqual(table.find("missing"), (None, 8))
+
 
 if __name__ == "__main__":
     unittest.main()
